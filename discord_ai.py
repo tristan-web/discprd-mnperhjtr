@@ -3,16 +3,17 @@ import requests
 import json
 import os
 
-# === Your configuration ===
-DISCORD_BOT_TOKEN = "MTM2Mzg3NjA2MTEyMDY5MjMyNQ.G1CqMn.onNB9LO8Z7-Hy9llNZGri7ZNAUq688YC0QYDfo"  # Replace locally only
+# === Configuration ===
+# Bot token is read from environment variable (safe for hosting)
+DISCORD_BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 SAMBANOVA_API_KEY = "88ff94a8-8fdb-4037-b6ae-36d20a15e5b3"
 
-# === Determine the folder where this script is located ===
+# === Ensure chat_history.json is saved in the same folder as this script ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, "chat_history.json")
 
-# === Load chat history from file ===
+# === Load chat history ===
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
@@ -22,12 +23,12 @@ def load_history():
             return {}
     return {}
 
-# === Save chat history to file ===
+# === Save chat history ===
 def save_history():
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(chat_history, f, indent=2)
 
-# === Memory: store chat history for each channel ===
+# === Memory: chat history per channel ===
 chat_history = load_history()
 
 # === Helper: call SambaNova API ===
@@ -36,10 +37,10 @@ def get_ai_answer(channel_id, user_message):
     if channel_key not in chat_history:
         chat_history[channel_key] = []
 
-    # Add user message
+    # Add user message to history
     chat_history[channel_key].append({"role": "user", "content": user_message})
 
-    # Keep only the last 10 messages
+    # Use last 10 messages for context
     messages = chat_history[channel_key][-10:]
 
     headers = {
@@ -68,9 +69,7 @@ def get_ai_answer(channel_id, user_message):
 
         # Save bot response
         chat_history[channel_key].append({"role": "assistant", "content": ai_message})
-
-        # Save to file
-        save_history()
+        save_history()  # Save to file every time
 
         return ai_message
 
@@ -98,4 +97,5 @@ async def on_message(message):
         answer = get_ai_answer(message.channel.id, user_message)
         await message.channel.send(answer)
 
+# === Run bot ===
 client.run(DISCORD_BOT_TOKEN)
