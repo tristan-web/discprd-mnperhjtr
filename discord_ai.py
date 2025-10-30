@@ -3,17 +3,16 @@ import requests
 import json
 import os
 
-# === Configuration ===
-# Bot token is read from environment variable (safe for hosting)
+# === Configuration (from Environment Variables) ===
 DISCORD_BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
+SAMBANOVA_API_KEY = os.environ["SAMBANOVA_API_KEY"]
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
-SAMBANOVA_API_KEY = "88ff94a8-8fdb-4037-b6ae-36d20a15e5b3"
 
-# === Ensure chat_history.json is saved in the same folder as this script ===
+# === Ensure chat_history.json is in the same folder as this script ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, "chat_history.json")
 
-# === Load chat history ===
+# === Load chat history from file ===
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
@@ -23,7 +22,7 @@ def load_history():
             return {}
     return {}
 
-# === Save chat history ===
+# === Save chat history to file ===
 def save_history():
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(chat_history, f, indent=2)
@@ -37,7 +36,7 @@ def get_ai_answer(channel_id, user_message):
     if channel_key not in chat_history:
         chat_history[channel_key] = []
 
-    # Add user message to history
+    # Add user message to memory
     chat_history[channel_key].append({"role": "user", "content": user_message})
 
     # Use last 10 messages for context
@@ -67,9 +66,9 @@ def get_ai_answer(channel_id, user_message):
         else:
             ai_message = "I couldn't generate a valid answer."
 
-        # Save bot response
+        # Save bot response to memory
         chat_history[channel_key].append({"role": "assistant", "content": ai_message})
-        save_history()  # Save to file every time
+        save_history()  # persist memory
 
         return ai_message
 
