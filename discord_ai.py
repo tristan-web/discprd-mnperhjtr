@@ -5,14 +5,14 @@ import json
 import os
 import asyncio
 
-# === Configuration ===
+# === ENVIRONMENT VARIABLES ===
 DISCORD_BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 SAMBANOVA_API_KEY = os.environ["SAMBANOVA_API_KEY"]
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 
 SERVER_NAME = "Tristan and Esmae`s Roblox Club"
 
-# === Words that cause a 5-minute ban ===
+# === Words that trigger a 5-minute ban ===
 RUDE_WORDS = [
     "stupid", "idiot", "dumb", "shut up", "ugly", "trash", "loser",
     "bitch", "fuck", "asshole"
@@ -22,6 +22,7 @@ RUDE_WORDS = [
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, "chat_history.json")
 
+# === Load chat history ===
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
@@ -48,14 +49,13 @@ def get_ai_answer(channel_id, user_message):
 
     headers = {
         "Authorization": f"Bearer {SAMBANOVA_API_KEY}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
 
     payload = {
-        "model": "Meta-Llama-3.3-70B-Instruct",
+        "model": "Meta-Llama-3.1-8B-Instruct",
         "messages": messages,
-        "max_tokens": 200,
-        "temperature": 0.7,
+        "temperature": 0.7
     }
 
     try:
@@ -65,7 +65,7 @@ def get_ai_answer(channel_id, user_message):
         if "choices" in data and len(data["choices"]) > 0:
             ai_message = data["choices"][0]["message"].get("content", "No answer found.")
         else:
-            ai_message = "I couldn't generate a valid answer."
+            ai_message = "I couldn't understand the response from the AI."
 
         chat_history[channel_key].append({"role": "assistant", "content": ai_message})
         save_history()
@@ -75,62 +75,62 @@ def get_ai_answer(channel_id, user_message):
     except Exception as e:
         return f"Error communicating with SambaNova: {e}"
 
-# === Discord bot setup ===
+# === Discord bot ===
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True  # Needed for banning/unbanning
+intents.members = True
 
 client = commands.Bot(command_prefix="!", intents=intents)
 
 @client.event
 async def on_ready():
     print(f"✅ Logged in as {client.user}")
-    print("Bot is running with admin abilities (if role has Admin enabled).")
+    print(f"💾 Chat history stored at {HISTORY_FILE}")
+
+# === Check rude words & ban ===
+async def check_rude_language(message):
+    text = message.content.lower()
+
+    if any(rude in text for rude in RUDE_WORDS):
+        try:
+            await message.channel.send(
+                f"🚨 {message.author.mention} has been banned for rude language (5 minutes)."
+            )
+
+            await message.guild.ban(
+                message.author,
+                reason="Rude language auto-ban"
+            )
+
+            await asyncio.sleep(300)
+
+            await message.guild.unban(
+                message.author,
+                reason="Temporary ban expired"
+            )
+
+            return True
+
+        except Exception as e:
+            print("Ban error:", e)
+
+    return False
 
 @client.event
 async def on_message(message):
-    # Ignore the bot itself
     if message.author == client.user:
         return
 
-    # Only moderate inside your specific server
+    # Only moderate inside your Roblox Club server
     if message.guild and message.guild.name == SERVER_NAME:
+        rude = await check_rude_language(message)
+        if rude:
+            return
 
-        # Check for rude words
-        msg_lower = message.content.lower()
-        if any(word in msg_lower for word in RUDE_WORDS):
-            try:
-                await message.channel.send(
-                    f"⚠️ {message.author.mention}, that was rude. "
-                    "You are banned for **5 minutes**."
-                )
-
-                # Ban user
-                await message.guild.ban(
-                    message.author,
-                    reason="Automatic rude-message ban"
-                )
-
-                # Wait 5 minutes
-                await asyncio.sleep(300)
-
-                # Unban user
-                await message.guild.unban(
-                    message.author,
-                    reason="Auto-unban after timeout"
-                )
-
-                return
-
-            except Exception as e:
-                await message.channel.send(f"❌ Error banning user: {e}")
-                return
-
-    # === Normal AI function ===
-    user_message = message.content.strip()
-    if user_message:
+    # AI reply
+    if message.content.strip():
         async with message.channel.typing():
-            answer = get_ai_answer(message.channel.id, user_message)
+            answer = get_ai_answer(message.channel.id, message.content.strip())
         await message.channel.send(answer)
 
 # === Run bot ===
