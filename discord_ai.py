@@ -2,44 +2,46 @@ import discord
 import requests
 import json
 import os
+import asyncio
 
-# === Configuration (from Environment Variables) ===
+# === Configuration ===
 DISCORD_BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]
 SAMBANOVA_API_KEY = os.environ["SAMBANOVA_API_KEY"]
 SAMBANOVA_API_URL = "https://api.sambanova.ai/v1/chat/completions"
 
-# === Ensure chat_history.json is in the same folder as this script ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, "chat_history.json")
 
-# === Load chat history from file ===
+# === Load chat history ===
 def load_history():
     if os.path.exists(HISTORY_FILE):
         try:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except:
             return {}
     return {}
 
-# === Save chat history to file ===
 def save_history():
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(chat_history, f, indent=2)
 
-# === Memory: chat history per channel ===
 chat_history = load_history()
 
-# === Helper: call SambaNova API ===
+# === RUDE WORD LIST (UPDATED) ===
+RUDE_WORDS = [
+    "stupid", "idiot", "dumb", "shut up", "ugly", "trash", "loser",
+    "bitch", "fuck", "asshole"
+]
+
+# === SambaNova API ===
 def get_ai_answer(channel_id, user_message):
     channel_key = str(channel_id)
     if channel_key not in chat_history:
         chat_history[channel_key] = []
 
-    # Add user message to memory
     chat_history[channel_key].append({"role": "user", "content": user_message})
 
-    # Use last 10 messages for context
     messages = chat_history[channel_key][-10:]
 
     headers = {
@@ -61,40 +63,71 @@ def get_ai_answer(channel_id, user_message):
 
         if "choices" in data and len(data["choices"]) > 0:
             ai_message = data["choices"][0]["message"].get("content", "No answer found.")
-        elif "output" in data:
-            ai_message = data["output"]
         else:
             ai_message = "I couldn't generate a valid answer."
 
-        # Save bot response to memory
         chat_history[channel_key].append({"role": "assistant", "content": ai_message})
-        save_history()  # persist memory
-
+        save_history()
         return ai_message
 
     except Exception as e:
         return f"Error communicating with SambaNova: {e}"
 
-# === Discord bot setup ===
-intents = discord.Intents.default()
-intents.message_content = True
+# === Discord bot ===
+intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
     print(f"✅ Logged in as {client.user}")
-    print(f"💾 Chat history file located at: {HISTORY_FILE}")
+    print(f"💾 Chat history stored at {HISTORY_FILE}")
+
+# === Check rude words & ban ===
+async def check_rude_language(message):
+    text = message.content.lower()
+    if any(rude in text for rude in RUDE_WORDS):
+        try:
+            await message.channel.send(
+                f"🚨 {message.author.mention} has been banned for rude language (5 minutes)."
+            )
+
+            # Ban user
+            await message.guild.ban(
+                message.author,
+                reason="Rude language auto-ban"
+            )
+
+            # Wait 5 minutes
+            await asyncio.sleep(300)
+
+            # Unban user
+            await message.guild.unban(
+                message.author,
+                reason="Temporary ban expired"
+            )
+
+            return True
+
+        except Exception as e:
+            print("Ban error:", e)
+
+    return False
+
 
 @client.event
 async def on_message(message):
     if message.author == client.user:
         return
 
-    user_message = message.content.strip()
-    if user_message:
+    # Check rude language
+    banned = await check_rude_language(message)
+    if banned:
+        return
+
+    # AI message reply
+    if message.content.strip():
         await message.channel.typing()
-        answer = get_ai_answer(message.channel.id, user_message)
+        answer = get_ai_answer(message.channel.id, message.content.strip())
         await message.channel.send(answer)
 
-# === Run bot ===
 client.run(DISCORD_BOT_TOKEN)
